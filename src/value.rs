@@ -1,8 +1,10 @@
+use mown::Mown;
+
 pub enum Value<'a> {
 	Integer(i64),
 	Float(f64),
-	Text(&'a str),
-	Blob(&'a [u8]),
+	Text(Mown<'a, str>),
+	Blob(Mown<'a, [u8]>),
 	Null
 }
 

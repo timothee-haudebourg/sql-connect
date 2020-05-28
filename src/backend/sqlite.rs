@@ -1,9 +1,14 @@
 use std::path::Path;
 use std::marker::PhantomData;
 use std::ffi::CString;
-use std::os::raw::c_int;
+use std::os::raw::{
+	c_void,
+	c_char,
+	c_int
+};
 use std::rc::Rc;
 use std::pin::Pin;
+use mown::Mown;
 use futures::{
 	Stream,
 	future::{
@@ -142,6 +147,22 @@ impl Statement {
 }
 
 impl crate::Statement for Statement {
+	fn bind(&mut self, index: usize, value: Value) -> Result<()> {
+		unsafe {
+			let i = index as i32;
+			let res = match value {
+				Value::Integer(n) => ffi::sqlite3_bind_int64(self.handle, i, n),
+				Value::Float(f) => ffi::sqlite3_bind_double(self.handle, i, f),
+				Value::Text(str) => ffi::sqlite3_bind_text(self.handle, i, str.as_ptr() as *const c_char, str.len() as i32, ffi::SQLITE_TRANSIENT()),
+				Value::Blob(blob) => ffi::sqlite3_bind_blob(self.handle, i, blob.as_ptr() as *const c_void, blob.len() as i32, ffi::SQLITE_TRANSIENT()),
+				Value::Null => ffi::sqlite3_bind_null(self.handle, i)
+			};
+
+			check(res)?;
+			Ok(())
+		}
+	}
+
 	fn execute<'a, R: 'a + FromRow>(&'a self) -> LocalBoxFuture<Result<Option<Box<dyn 'a + Stream<Item = Result<R>>>>>> {
 		async move {
 			match self.execute().await {
@@ -254,12 +275,12 @@ impl<'a, R: FromRow> Iterator for Row<'a, R> {
 						let len = ffi::sqlite3_column_bytes(self.rows.statement.handle, i) as usize;
 						let ptr = ffi::sqlite3_column_text(self.rows.statement.handle, i) as *const u8;
 						let bytes = std::slice::from_raw_parts(ptr, len);
-						Value::Text(std::str::from_utf8_unchecked(bytes))
+						Value::Text(Mown::Borrowed(std::str::from_utf8_unchecked(bytes)))
 					},
 					ffi::SQLITE_BLOB => {
 						let len = ffi::sqlite3_column_bytes(self.rows.statement.handle, i) as usize;
 						let ptr = ffi::sqlite3_column_blob(self.rows.statement.handle, i) as *const u8;
-						Value::Blob(std::slice::from_raw_parts(ptr, len))
+						Value::Blob(Mown::Borrowed(std::slice::from_raw_parts(ptr, len)))
 					},
 					_ => Value::Null
 				}

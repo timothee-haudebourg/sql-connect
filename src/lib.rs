@@ -1,3 +1,5 @@
+#![feature(vec_into_raw_parts)]
+
 #[macro_use]
 extern crate pin_utils;
 
@@ -25,6 +27,8 @@ pub trait Connection {
 }
 
 pub trait Statement {
+	fn bind(&mut self, index: usize, value: Value) -> Result<()>;
+
 	/// Execute the statement.
 	/// If the statement is a data query, returns some stream of rows.
 	fn execute<'a, Row: 'a + FromRow>(&'a self) -> LocalBoxFuture<Result<Option<Box<dyn 'a + Stream<Item = Result<Row>>>>>>;
