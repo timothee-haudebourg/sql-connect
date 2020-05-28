@@ -221,7 +221,7 @@ impl<'a, R: FromRow> Stream for Rows<'a, R> {
 impl<'a, R> Drop for Rows<'a, R> {
 	fn drop(&mut self) {
 		unsafe {
-			ffi::sqlite3_reset(self.statement.handle)
+			ffi::sqlite3_reset(self.statement.handle);
 		}
 	}
 }
