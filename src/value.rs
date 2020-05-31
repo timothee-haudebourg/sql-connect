@@ -27,3 +27,15 @@ impl FromValue for String {
 		}
 	}
 }
+
+impl<'a> From<String> for Value<'a> {
+	fn from(str: String) -> Value<'a> {
+		Value::Text(Mown::Owned(str))
+	}
+}
+
+impl<'a> From<&'a str> for Value<'a> {
+	fn from(str: &'a str) -> Value<'a> {
+		Value::Text(Mown::Borrowed(str))
+	}
+}

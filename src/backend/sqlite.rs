@@ -39,6 +39,8 @@ pub struct Connection {
 	next_savepoint: usize
 }
 
+unsafe impl Send for Connection { }
+
 #[derive(Debug)]
 pub enum SqliteError {
 	Unknown,
@@ -236,7 +238,7 @@ pub struct Statement {
 impl Statement {
 	fn bind(&self, index: usize, value: Value) -> Result<()> {
 		unsafe {
-			let i = index as i32;
+			let i = index as i32 + 1;
 			let res = match value {
 				Value::Integer(n) => ffi::sqlite3_bind_int64(self.handle, i, n),
 				Value::Float(f) => ffi::sqlite3_bind_double(self.handle, i, f),

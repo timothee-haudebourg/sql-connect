@@ -85,4 +85,17 @@ pub trait Connection: Sized {
 			}.boxed_local()
 		}
 	}
+
+	/// Prepare and execute a statement.
+	fn execute_script<'a>(&'a mut self, sql: &'a str) -> LocalBoxFuture<'a, Result<()>> where Self::Statement: 'a {
+		async move {
+			for stmt in crate::parsing::split_statement_list(sql) {
+				if let Some(prepared_stmt) = self.prepare(stmt)? {
+					self.execute::<()>(&prepared_stmt, vec![]).await?;
+				}
+			}
+
+			Ok(())
+		}.boxed_local()
+	}
 }

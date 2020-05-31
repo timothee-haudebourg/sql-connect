@@ -145,17 +145,17 @@ impl<'a, C: Connection> Transaction<'a, C> {
 // }
 
 impl<'a, C: Connection> Drop for Transaction<'a, C> {
-	/// Commit the transaction before dropping it.
+	/// Rollback the transaction before dropping it.
 	///
-	/// This will block the current thread until the transaction is commited,
-	/// unless it has already be commited or rolled back explicitelly.
+	/// This will block the current thread until the transaction is rolled back,
+	/// unless it has already be commited or rolled back explicitly.
 	fn drop(&mut self) {
 		if !self.done {
 			futures::executor::block_on(async move {
-				let mut end = None;
-				std::mem::swap(&mut end, &mut self.end);
-				if let Some(end) = end {
-					self.execute::<()>(&end, vec![]).await;
+				let mut rollback = None;
+				std::mem::swap(&mut rollback, &mut self.rollback);
+				if let Some(rollback) = rollback {
+					self.execute::<()>(&rollback, vec![]).await;
 				}
 			});
 		}

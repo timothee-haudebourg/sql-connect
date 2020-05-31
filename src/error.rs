@@ -6,11 +6,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct Error {
 	kind: ErrorKind,
-	source: Option<Box<dyn std::error::Error>>
+	source: Option<Box<dyn Send + Sync + std::error::Error>>
 }
 
 impl Error {
-	pub fn new(kind: ErrorKind, source: Option<Box<dyn std::error::Error>>) -> Error {
+	pub fn new(kind: ErrorKind, source: Option<Box<dyn Send + Sync + std::error::Error>>) -> Error {
 		Error {
 			kind,
 			source
