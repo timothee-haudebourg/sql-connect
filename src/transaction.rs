@@ -113,7 +113,7 @@ impl<'a, C: SavepointCapable> SavepointCapable for Transaction<'a, C> {
 }
 
 impl<'a, C: Connection> Transaction<'a, C> {
-	pub async fn commit(&mut self) -> Result<()> {
+	pub async fn commit(mut self) -> Result<()> {
 		if !self.done {
 			self.done = true;
 			let mut end = None;
@@ -125,7 +125,7 @@ impl<'a, C: Connection> Transaction<'a, C> {
 		Ok(())
 	}
 
-	pub async fn rollback(&mut self) -> Result<()> {
+	pub async fn rollback(mut self) -> Result<()> {
 		if !self.done {
 			self.done = true;
 			let mut rollback = None;
@@ -151,7 +151,13 @@ impl<'a, C: Connection> Drop for Transaction<'a, C> {
 	/// unless it has already be commited or rolled back explicitelly.
 	fn drop(&mut self) {
 		if !self.done {
-			futures::executor::block_on(self.commit());
+			futures::executor::block_on(async move {
+				let mut end = None;
+				std::mem::swap(&mut end, &mut self.end);
+				if let Some(end) = end {
+					self.execute::<()>(&end, vec![]).await;
+				}
+			});
 		}
 	}
 }

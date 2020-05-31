@@ -72,8 +72,8 @@ async fn transaction() -> sql_connect::Result<()> {
 
 	trans.rollback().await?;
 
-	let stmtt = trans.prepare("SELECT (id) FROM foo")?.unwrap();
-	let mut rows = trans.execute::<String>(&stmtt, vec![]).await?.unwrap();
+	let stmtt = ctx.prepare("SELECT (id) FROM foo")?.unwrap();
+	let mut rows = ctx.execute::<String>(&stmtt, vec![]).await?.unwrap();
  	let mut rows: Vec<_> = rows.collect().await;
 	assert_eq!(rows.len(), 1);
 
