@@ -10,7 +10,10 @@ edition = "2018"
 libsqlite3-sys = "*"
 # backoff-futures = "*"
 backoff = "*"
-futures = "*"
+futures = "0.3.5"
 futures-timer = "3.0"
 pin-utils = "*"
 mown = "*"
+
+[dev-dependencies]
+async-std = { version = "*", features = ["attributes"] }

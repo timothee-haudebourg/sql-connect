@@ -1,6 +1,15 @@
+use std::pin::Pin;
+use std::task::{
+	Poll,
+	Context
+};
+use futures::{
+	stream::Stream
+};
 use crate::{
 	Value,
-	FromValue
+	FromValue,
+	Result
 };
 
 /// Types that can be converted from a data column.
@@ -38,3 +47,23 @@ tuple_from_row!(T1, T2, T3, T4, T5);
 tuple_from_row!(T1, T2, T3, T4, T5, T6);
 tuple_from_row!(T1, T2, T3, T4, T5, T6, T7);
 tuple_from_row!(T1, T2, T3, T4, T5, T6, T7, T8);
+
+pub struct Rows<'a, R> {
+	inner: Pin<Box<dyn 'a + Stream<Item = Result<R>>>>
+}
+
+impl<'a, R> Rows<'a, R> {
+	pub fn new<S: 'a + Stream<Item = Result<R>>>(rows: S) -> Rows<'a, R> {
+		Rows {
+			inner: Box::pin(rows)
+		}
+	}
+}
+
+impl<'a, R> Stream for Rows<'a, R> {
+	type Item = Result<R>;
+
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+		self.inner.as_mut().poll_next(cx)
+	}
+}

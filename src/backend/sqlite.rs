@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::marker::PhantomData;
+use std::fmt;
 use std::ffi::CString;
 use std::os::raw::{
 	c_void,
@@ -12,6 +13,7 @@ use mown::Mown;
 use futures::{
 	Stream,
 	future::{
+		Future,
 		LocalBoxFuture,
 		FutureExt
 	}
@@ -33,18 +35,98 @@ use crate::{
 	}
 };
 
-struct Inner {
-	handle: *mut ffi::sqlite3
-}
-
 pub struct Connection {
-	inner: Rc<Inner>
+	handle: *mut ffi::sqlite3,
+	next_savepoint: usize
 }
 
-fn check(code: c_int) -> Result<()> {
-	match code {
+#[derive(Debug)]
+pub enum SqliteError {
+	Unknown,
+	Internal,
+	Perm,
+	Abort,
+	Busy,
+	Locked,
+	NoMem,
+	ReadOnly,
+	Interrupt,
+	IO,
+	Corrupt,
+	NotFound,
+	Full,
+	CantOpen,
+	Protocol,
+	Empty,
+	Schema,
+	TooBig,
+	Constraint,
+	Mismatch,
+	Misuse,
+	NoLFS,
+	Auth,
+	Format,
+	Range,
+	NotADB
+}
+
+impl fmt::Display for SqliteError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{:?}", self)
+	}
+}
+
+impl std::error::Error for SqliteError {
+	//
+}
+
+impl From<SqliteError> for crate::Error {
+	fn from(e: SqliteError) -> crate::Error {
+		let kind = match e {
+			SqliteError::Schema => ErrorKind::SchemaChanged,
+			_ => ErrorKind::Failure
+		};
+
+		crate::Error::new(kind, Some(Box::new(e)))
+	}
+}
+
+fn check(code: c_int) -> std::result::Result<(), SqliteError> {
+	let primary = code & 0xff;
+	let extended = code >> 8;
+
+	match primary {
 		ffi::SQLITE_OK => Ok(()),
-		_ => panic!("TODO error")
+		ffi::SQLITE_ERROR => {
+			println!("code: {}", code);
+			Err(SqliteError::Unknown)
+		},
+		ffi::SQLITE_INTERNAL => Err(SqliteError::Internal),
+		ffi::SQLITE_PERM => Err(SqliteError::Perm),
+		ffi::SQLITE_ABORT => Err(SqliteError::Abort),
+		ffi::SQLITE_BUSY => Err(SqliteError::Busy),
+		ffi::SQLITE_LOCKED => Err(SqliteError::Locked),
+		ffi::SQLITE_NOMEM => Err(SqliteError::NoMem),
+		ffi::SQLITE_READONLY => Err(SqliteError::ReadOnly),
+		ffi::SQLITE_INTERRUPT => Err(SqliteError::Interrupt),
+		ffi::SQLITE_IOERR => Err(SqliteError::IO),
+		ffi::SQLITE_CORRUPT => Err(SqliteError::Corrupt),
+		ffi::SQLITE_NOTFOUND => Err(SqliteError::NotFound),
+		ffi::SQLITE_FULL => Err(SqliteError::Full),
+		ffi::SQLITE_CANTOPEN => Err(SqliteError::CantOpen),
+		ffi::SQLITE_PROTOCOL => Err(SqliteError::Protocol),
+		ffi::SQLITE_EMPTY => Err(SqliteError::Empty),
+		ffi::SQLITE_SCHEMA => Err(SqliteError::Schema),
+		ffi::SQLITE_TOOBIG => Err(SqliteError::TooBig),
+		ffi::SQLITE_CONSTRAINT => Err(SqliteError::Constraint),
+		ffi::SQLITE_MISMATCH => Err(SqliteError::Mismatch),
+		ffi::SQLITE_MISUSE => Err(SqliteError::Misuse),
+		ffi::SQLITE_NOLFS => Err(SqliteError::NoLFS),
+		ffi::SQLITE_AUTH => Err(SqliteError::Auth),
+		ffi::SQLITE_FORMAT => Err(SqliteError::Format),
+		ffi::SQLITE_RANGE => Err(SqliteError::Range),
+		ffi::SQLITE_NOTADB => Err(SqliteError::NotADB),
+		_ => Err(SqliteError::Unknown)
 	}
 }
 
@@ -81,44 +163,89 @@ impl Connection {
 			let c_path = path_to_cstring(path.as_ref())?;
 			check(ffi::sqlite3_open(c_path.as_ptr(), &mut handle))?;
 			Ok(Connection {
-				inner: Rc::new(Inner {
-					handle: handle
-				})
+				handle: handle,
+				next_savepoint: 0
 			})
 		}
 	}
+}
+
+impl crate::Connection for Connection {
+	type Statement = Statement;
 
 	/// Compile an SQL statement.
-	pub fn prepare(&self, sql: &str) -> Result<Statement> {
+	///
+	/// The string must consist of a single SQL statement,
+	/// with no terminating semicolon (`;`).
+	fn prepare(&mut self, sql: &str) -> Result<Option<Statement>> {
 		unsafe {
 			let mut handle = std::ptr::null_mut();
 			check(ffi::sqlite3_prepare_v2(
-				self.inner.handle,
+				self.handle,
 				&sql.as_bytes()[0] as *const u8 as *const i8,
 				sql.len() as i32,
 				&mut handle,
 				std::ptr::null_mut()
 			))?;
 
-			Ok(Statement {
-				db: self.inner.clone(),
-				handle
-			})
+			if handle.is_null() {
+				Ok(None)
+			} else {
+				Ok(Some(Statement {
+					handle
+				}))
+			}
 		}
 	}
 }
 
+impl crate::TransactionCapable for Connection { }
+
+impl crate::SavepointCapable for Connection {
+	fn anonymous_savepoint_name(&mut self) -> String {
+		let i = self.next_savepoint;
+		self.next_savepoint += 1;
+		"anon".to_string() + &i.to_string()
+	}
+}
+
 pub struct Statement {
-	db: Rc<Inner>,
 	handle: *mut ffi::sqlite3_stmt
 }
 
 impl Statement {
+	fn bind(&self, index: usize, value: Value) -> Result<()> {
+		unsafe {
+			let i = index as i32;
+			let res = match value {
+				Value::Integer(n) => ffi::sqlite3_bind_int64(self.handle, i, n),
+				Value::Float(f) => ffi::sqlite3_bind_double(self.handle, i, f),
+				Value::Text(str) => ffi::sqlite3_bind_text(self.handle, i, str.as_ptr() as *const c_char, str.len() as i32, ffi::SQLITE_TRANSIENT()),
+				Value::Blob(blob) => ffi::sqlite3_bind_blob(self.handle, i, blob.as_ptr() as *const c_void, blob.len() as i32, ffi::SQLITE_TRANSIENT()),
+				Value::Null => ffi::sqlite3_bind_null(self.handle, i)
+			};
+
+			check(res)?;
+			Ok(())
+		}
+	}
+
+	fn bind_all(&self, args: Vec<Value>) -> Result<()> {
+		let mut i = 0;
+		for arg in args {
+			self.bind(i, arg)?;
+			i += 1;
+		}
+
+		Ok(())
+	}
+
 	/// Try to execute the statement.
 	///
 	/// This is a non-blocking method. A `ErrorKind::Busy` error will be raised if the database
 	/// is busy.
-	pub fn try_execute<R>(&self) -> Result<Option<Rows<R>>> {
+	fn try_execute<R>(&self, args: Vec<Value>) -> Result<Option<Rows<R>>> {
+		self.bind_all(args);
 		unsafe {
 			let column_count = ffi::sqlite3_column_count(self.handle);
 			match ffi::sqlite3_step(self.handle) {
@@ -140,33 +267,23 @@ impl Statement {
 		}
 	}
 
-	pub async fn execute<'a, R>(&'a self) -> Result<Option<Rows<'a, R>>> {
+	fn execute<'a, R>(&'a self, connection: &mut Connection, args: Vec<Value>) -> impl 'a + Future<Output=Result<Option<Rows<'a, R>>>> {
 		let mut backoff = backoff::ExponentialBackoff::default();
-		async move { self.try_execute() }.with_backoff(&mut backoff).await
+		self.bind_all(args);
+		async move {
+			async move { self.try_execute(Vec::new()) }.with_backoff(&mut backoff).await
+		}
 	}
 }
 
-impl crate::Statement for Statement {
-	fn bind(&mut self, index: usize, value: Value) -> Result<()> {
-		unsafe {
-			let i = index as i32;
-			let res = match value {
-				Value::Integer(n) => ffi::sqlite3_bind_int64(self.handle, i, n),
-				Value::Float(f) => ffi::sqlite3_bind_double(self.handle, i, f),
-				Value::Text(str) => ffi::sqlite3_bind_text(self.handle, i, str.as_ptr() as *const c_char, str.len() as i32, ffi::SQLITE_TRANSIENT()),
-				Value::Blob(blob) => ffi::sqlite3_bind_blob(self.handle, i, blob.as_ptr() as *const c_void, blob.len() as i32, ffi::SQLITE_TRANSIENT()),
-				Value::Null => ffi::sqlite3_bind_null(self.handle, i)
-			};
-
-			check(res)?;
-			Ok(())
-		}
-	}
-
-	fn execute<'a, R: 'a + FromRow>(&'a self) -> LocalBoxFuture<Result<Option<Box<dyn 'a + Stream<Item = Result<R>>>>>> {
+impl crate::Statement<Connection> for Statement {
+	fn execute<'a, R: 'a + FromRow>(&'a self, connection: &mut Connection, args: Vec<Value>) -> LocalBoxFuture<Result<Option<crate::Rows<'a, R>>>> {
+		let exec = self.execute(connection, args);
 		async move {
-			match self.execute().await {
-				Ok(Some(rows)) => Ok(Some(Box::new(rows) as Box<dyn Stream<Item = Result<R>>>)),
+			match exec.await {
+				Ok(Some(rows)) => {
+					Ok(Some(crate::Rows::new(rows)))
+				},
 				Ok(None) => Ok(None),
 				Err(e) => Err(e)
 			}
@@ -186,6 +303,7 @@ pub struct Rows<'a, R> {
 	statement: &'a Statement,
 	column_count: usize,
 	backoff: BackoffState<backoff::ExponentialBackoff>,
+	first_row: bool,
 	row: PhantomData<R>
 }
 
@@ -195,6 +313,7 @@ impl<'a, R> Rows<'a, R> {
 			statement,
 			column_count,
 			backoff: BackoffState::new(backoff::ExponentialBackoff::default()),
+			first_row: false,
 			row: PhantomData
 		}
 	}
@@ -204,35 +323,48 @@ impl<'a, R> Rows<'a, R> {
 			statement,
 			column_count,
 			backoff: BackoffState::new(backoff::ExponentialBackoff::default()),
+			first_row: true,
 			row: PhantomData
 		}
+	}
+
+	pub fn consume(&mut self) {
+		self.first_row = false;
 	}
 
 	unsafe_pinned!(backoff: BackoffState<backoff::ExponentialBackoff>);
 }
 
+impl<'a, R> Unpin for Rows<'a, R> { }
+
 impl<'a, R: FromRow> Stream for Rows<'a, R> {
 	type Item = Result<R>;
 
-	fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
 		unsafe {
-			match ffi::sqlite3_step(self.statement.handle) {
-				ffi::SQLITE_DONE => {
-					Poll::Ready(None)
-				},
-				ffi::SQLITE_ROW => {
-					let row = Row::new(&self);
-					Poll::Ready(Some(Ok(R::from(row))))
-				},
-				ffi::SQLITE_BUSY => {
-					match self.backoff().poll(cx) {
-						Ok(()) => Poll::Pending,
-						Err(e) => Poll::Ready(Some(Err(e)))
+			if self.first_row {
+				self.first_row = false;
+				let row = Row::new(&self);
+				Poll::Ready(Some(Ok(R::from(row))))
+			} else {
+				match ffi::sqlite3_step(self.statement.handle) {
+					ffi::SQLITE_DONE => {
+						Poll::Ready(None)
+					},
+					ffi::SQLITE_ROW => {
+						let row = Row::new(&self);
+						Poll::Ready(Some(Ok(R::from(row))))
+					},
+					ffi::SQLITE_BUSY => {
+						match self.backoff().poll(cx) {
+							Ok(()) => Poll::Pending,
+							Err(e) => Poll::Ready(Some(Err(e)))
+						}
+					},
+					res => {
+						check(res)?;
+						unreachable!()
 					}
-				},
-				res => {
-					check(res)?;
-					unreachable!()
 				}
 			}
 		}
@@ -261,7 +393,7 @@ impl<'a, R> Row<'a, R> {
 	}
 }
 
-impl<'a, R: FromRow> Iterator for Row<'a, R> {
+impl<'a, R> Iterator for Row<'a, R> {
 	type Item = Value<'a>;
 
 	fn next(&mut self) -> Option<Value<'a>> {

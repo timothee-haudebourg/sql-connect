@@ -36,7 +36,12 @@ pub enum ErrorKind {
 	InvalidPath(PathBuf),
 	InvalidQuery,
 	Failure,
-	Busy
+
+	/// The database is busy.
+	Busy,
+
+	/// The database schema changed since the statement was prepared.
+	SchemaChanged,
 }
 
 impl ErrorKind {
@@ -63,7 +68,8 @@ impl fmt::Display for ErrorKind {
 			InvalidPath(_) => write!(f, "invalid path"),
 			InvalidQuery => write!(f, "invalid query"),
 			Failure => write!(f, "failure"),
-			Busy => write!(f, "busy")
+			Busy => write!(f, "busy"),
+			SchemaChanged => write!(f, "schema changed")
 		}
 	}
 }
