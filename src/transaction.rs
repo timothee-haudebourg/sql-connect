@@ -1,15 +1,12 @@
-use std::mem::MaybeUninit;
 use futures::{
 	future::{
 		LocalBoxFuture,
 		FutureExt
 	}
 };
-use mown::Mown;
 use crate::{
 	Connection,
 	Result,
-	Statement,
 	FromRow,
 	Value,
 	Rows
@@ -25,7 +22,7 @@ pub trait TransactionCapable: Connection {
 			let end = self.prepare("COMMIT")?.unwrap();
 			let rollback = self.prepare("ROLLBACK")?.unwrap();
 
-			begin.execute::<()>(self, vec![]).await?;
+			self.execute::<()>(&begin, vec![]).await?;
 			Ok(Transaction {
 				connection: self,
 				done: false,
@@ -55,7 +52,7 @@ pub trait SavepointCapable: Connection {
 			let end = self.prepare(&release)?.unwrap();
 			let rollback = self.prepare("ROLLBACK TO ")?.unwrap();
 
-			begin.execute::<()>(self, vec![]).await?;
+			self.execute::<()>(&begin, vec![]).await?;
 			Ok(Transaction {
 				connection: self,
 				done: false,
@@ -73,7 +70,7 @@ pub struct Transaction<'a, C: Connection> {
 	rollback: Option<C::Statement>
 }
 
-impl<'a, C: Connection> Connection for Transaction<'a, C> where C::Statement: Statement<Transaction<'a, C>> {
+impl<'a, C: Connection> Connection for Transaction<'a, C> {
 	type Statement = C::Statement;
 
 	fn prepare(&mut self, sql: &str) -> Result<Option<Self::Statement>> {
@@ -83,9 +80,13 @@ impl<'a, C: Connection> Connection for Transaction<'a, C> where C::Statement: St
 	fn prepare_list(&mut self, sql: &str) -> Result<Vec<Self::Statement>> {
 		self.connection.prepare_list(sql)
 	}
+
+	fn execute<'s, R: 's + FromRow>(&'s mut self, statement: &'s Self::Statement, args: Vec<Value>) -> LocalBoxFuture<'s, Result<Option<Rows<'s, R>>>> {
+		self.connection.execute(statement, args)
+	}
 }
 
-impl<'a, C: SavepointCapable> SavepointCapable for Transaction<'a, C> where C::Statement: Statement<Transaction<'a, C>> {
+impl<'a, C: SavepointCapable> SavepointCapable for Transaction<'a, C> {
 	fn anonymous_savepoint_name(&mut self) -> String {
 		self.connection.anonymous_savepoint_name()
 	}
@@ -111,14 +112,14 @@ impl<'a, C: SavepointCapable> SavepointCapable for Transaction<'a, C> where C::S
 	}
 }
 
-impl<'a, C: Connection> Transaction<'a, C> where C::Statement: Statement<Transaction<'a, C>> {
+impl<'a, C: Connection> Transaction<'a, C> {
 	pub async fn commit(&mut self) -> Result<()> {
 		if !self.done {
 			self.done = true;
 			let mut end = None;
 			std::mem::swap(&mut end, &mut self.end);
 			if let Some(end) = end {
-				end.execute::<()>(self, vec![]).await?;
+				self.execute::<()>(&end, vec![]).await?;
 			}
 		}
 		Ok(())
@@ -130,18 +131,18 @@ impl<'a, C: Connection> Transaction<'a, C> where C::Statement: Statement<Transac
 			let mut rollback = None;
 			std::mem::swap(&mut rollback, &mut self.rollback);
 			if let Some(rollback) = rollback {
-				rollback.execute::<()>(self, vec![]).await?;
+				self.execute::<()>(&rollback, vec![]).await?;
 			}
 		}
 		Ok(())
 	}
 }
 
-impl<'c, C: Connection, S: Statement<C>> Statement<Transaction<'c, C>> for S {
-	fn execute<'a, R: 'a + FromRow>(&'a self, connection: &mut Transaction<C>, args: Vec<Value>) -> LocalBoxFuture<Result<Option<Rows<'a, R>>>> {
-		self.execute(connection.connection, args)
-	}
-}
+// impl<'c, C: Connection, S: Statement<C>> Statement<Transaction<'c, C>> for S {
+// 	fn execute<'a, R: 'a + FromRow>(&'a self, connection: &mut Transaction<C>, args: Vec<Value>) -> LocalBoxFuture<Result<Option<Rows<'a, R>>>> {
+// 		self.execute(connection.connection, args)
+// 	}
+// }
 
 impl<'a, C: Connection> Drop for Transaction<'a, C> {
 	/// Commit the transaction before dropping it.

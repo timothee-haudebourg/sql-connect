@@ -7,7 +7,6 @@ use std::os::raw::{
 	c_char,
 	c_int
 };
-use std::rc::Rc;
 use std::pin::Pin;
 use mown::Mown;
 use futures::{
@@ -197,6 +196,27 @@ impl crate::Connection for Connection {
 			}
 		}
 	}
+
+	fn execute<'a, R: 'a + FromRow>(&mut self, statement: &'a Self::Statement, args: Vec<Value>) -> LocalBoxFuture<'a, Result<Option<crate::Rows<'a, R>>>> {
+		let exec = statement.execute(self, args);
+		async move {
+			match exec.await {
+				Ok(Some(rows)) => {
+					Ok(Some(crate::Rows::new(rows)))
+				},
+				Ok(None) => Ok(None),
+				Err(e) => Err(e)
+			}
+		}.boxed_local()
+	}
+}
+
+impl Drop for Connection {
+	fn drop(&mut self) {
+		unsafe {
+			ffi::sqlite3_close(self.handle);
+		}
+	}
 }
 
 impl crate::TransactionCapable for Connection { }
@@ -267,27 +287,12 @@ impl Statement {
 		}
 	}
 
-	fn execute<'a, R>(&'a self, connection: &mut Connection, args: Vec<Value>) -> impl 'a + Future<Output=Result<Option<Rows<'a, R>>>> {
+	fn execute<'a, R>(&'a self, _connection: &mut Connection, args: Vec<Value>) -> impl 'a + Future<Output=Result<Option<Rows<'a, R>>>> {
 		let mut backoff = backoff::ExponentialBackoff::default();
 		self.bind_all(args);
 		async move {
 			async move { self.try_execute(Vec::new()) }.with_backoff(&mut backoff).await
 		}
-	}
-}
-
-impl crate::Statement<Connection> for Statement {
-	fn execute<'a, R: 'a + FromRow>(&'a self, connection: &mut Connection, args: Vec<Value>) -> LocalBoxFuture<Result<Option<crate::Rows<'a, R>>>> {
-		let exec = self.execute(connection, args);
-		async move {
-			match exec.await {
-				Ok(Some(rows)) => {
-					Ok(Some(crate::Rows::new(rows)))
-				},
-				Ok(None) => Ok(None),
-				Err(e) => Err(e)
-			}
-		}.boxed_local()
 	}
 }
 

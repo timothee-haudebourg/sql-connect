@@ -4,10 +4,8 @@
 extern crate pin_utils;
 
 use futures::{
-	Stream,
 	FutureExt,
 	future::{
-		Future,
 		LocalBoxFuture
 	}
 };
@@ -28,7 +26,7 @@ pub use row::*;
 pub use transaction::*;
 
 pub trait Connection: Sized {
-	type Statement: Statement<Self>;
+	type Statement;
 
 	/// Compile an SQL statement.
 	///
@@ -57,13 +55,34 @@ pub trait Connection: Sized {
 	///
 	/// Every pending statements will be executed before the given statement using the
 	/// [`execute_pending_statements`] function.
-	fn execute<'a, S: Statement<Self>, R: 'a + FromRow>(&mut self, statement: &'a S, args: Vec<Value>) -> LocalBoxFuture<'a, Result<Option<Rows<'a, R>>>> {
-		statement.execute(self, args)
-	}
-}
+	fn execute<'a, R: 'a + FromRow>(&'a mut self, statement: &'a Self::Statement, args: Vec<Value>) -> LocalBoxFuture<'a, Result<Option<Rows<'a, R>>>>;
 
-pub trait Statement<C: Connection> {
-	/// Execute the statement.
-	/// If the statement is a data query, returns some stream of rows.
-	fn execute<'a, R: 'a + FromRow>(&'a self, connection: &mut C, args: Vec<Value>) -> LocalBoxFuture<Result<Option<Rows<'a, R>>>>;
+	/// Execute the statement by consuming it.
+	fn consume<'a, R: 'a + FromRow>(&'a mut self, statement: Self::Statement, args: Vec<Value>) -> LocalBoxFuture<'a, Result<Option<OwnedRows<'a, Self::Statement, R>>>> where Self::Statement: 'a {
+		unsafe {
+			// This is safe because the statement will be embeded in the `OwnedRows` so that it won't be dropped before the rows.
+			let exec: LocalBoxFuture<'a, Result<Option<Rows<'a, R>>>> = std::mem::transmute(self.execute::<R>(&statement, args));
+			async move {
+				match exec.await? {
+					Some(rows) => Ok(Some(rows.into_owned(statement))),
+					None => Ok(None)
+				}
+			}.boxed_local()
+		}
+	}
+
+	/// Prepare and execute a statement.
+	fn execute_sql<'a, R: 'a + FromRow>(&'a mut self, sql: &str, args: Vec<Value>) -> LocalBoxFuture<'a, Result<Option<OwnedRows<'a, Self::Statement, R>>>> where Self::Statement: 'a {
+		match self.prepare(sql) {
+			Ok(Some(statement)) => {
+				self.consume(statement, args)
+			},
+			Ok(None) => async move {
+				Ok(None)
+			}.boxed_local(),
+			Err(e) => async move {
+				Err(e)
+			}.boxed_local()
+		}
+	}
 }

@@ -58,9 +58,37 @@ impl<'a, R> Rows<'a, R> {
 			inner: Box::pin(rows)
 		}
 	}
+
+	pub(crate) unsafe fn into_owned<'r, S>(self, stmt: S) -> OwnedRows<'r, S, R> {
+		OwnedRows {
+			statement: stmt,
+			inner: std::mem::transmute(self.inner)
+		}
+	}
 }
 
 impl<'a, R> Stream for Rows<'a, R> {
+	type Item = Result<R>;
+
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+		self.inner.as_mut().poll_next(cx)
+	}
+}
+
+pub struct OwnedRows<'a, S, R> {
+	/// Statement beeing run.
+	///
+	/// It is never actually used, but must live until the rows are dropped.
+	#[allow(dead_code)]
+	statement: S,
+
+	/// The rows stream.
+	inner: Pin<Box<dyn 'a + Stream<Item = Result<R>>>>
+}
+
+impl<'a, S, R> Unpin for OwnedRows<'a, S, R> { }
+
+impl<'a, S, R> Stream for OwnedRows<'a, S, R> {
 	type Item = Result<R>;
 
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

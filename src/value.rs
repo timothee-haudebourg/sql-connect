@@ -13,7 +13,7 @@ pub trait FromValue: Sized {
 }
 
 impl FromValue for () {
-	fn from<'a>(value: Value<'a>) -> Self {
+	fn from<'a>(_value: Value<'a>) -> Self {
 		()
 	}
 }

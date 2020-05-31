@@ -49,7 +49,7 @@ impl<'a> Iterator for Statements<'a> {
 				Some(State::String) => match c {
 					'\'' => {
 						match self.chars.peek() {
-							Some((c, '\'')) => {
+							Some((_, '\'')) => {
 								self.chars.next(); // skip the next quote.
 							},
 							_ => {
