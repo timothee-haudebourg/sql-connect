@@ -18,6 +18,15 @@ impl FromValue for () {
 	}
 }
 
+impl FromValue for usize {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Integer(i) if i >= 0 => i as usize,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
 impl FromValue for String {
 	fn from<'a>(value: Value<'a>) -> Self {
 		match value {
@@ -25,6 +34,12 @@ impl FromValue for String {
 			Value::Text(Mown::Owned(str)) => str,
 			_ => panic!("invalid convertion")
 		}
+	}
+}
+
+impl<'a> From<usize> for Value<'a> {
+	fn from(i: usize) -> Value<'a> {
+		Value::Integer(i as i64)
 	}
 }
 
