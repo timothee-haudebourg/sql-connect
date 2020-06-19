@@ -42,6 +42,9 @@ pub enum ErrorKind {
 
 	/// The database schema changed since the statement was prepared.
 	SchemaChanged,
+
+	/// An SQL constraint violation occurred while trying to process an SQL statement.
+	ConstraintViolation
 }
 
 impl ErrorKind {
@@ -69,7 +72,8 @@ impl fmt::Display for ErrorKind {
 			InvalidQuery => write!(f, "invalid query"),
 			Failure => write!(f, "failure"),
 			Busy => write!(f, "busy"),
-			SchemaChanged => write!(f, "schema changed")
+			SchemaChanged => write!(f, "schema changed"),
+			ConstraintViolation => write!(f, "constraint violation")
 		}
 	}
 }

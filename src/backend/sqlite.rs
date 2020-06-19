@@ -85,6 +85,7 @@ impl From<SqliteError> for crate::Error {
 	fn from(e: SqliteError) -> crate::Error {
 		let kind = match e {
 			SqliteError::Schema => ErrorKind::SchemaChanged,
+			SqliteError::Constraint => ErrorKind::ConstraintViolation,
 			_ => ErrorKind::Failure
 		};
 
@@ -96,12 +97,13 @@ fn check(code: c_int) -> std::result::Result<(), SqliteError> {
 	let primary = code & 0xff;
 	let extended = code >> 8;
 
+	// if primary != ffi::SQLITE_OK {
+	// 	println!("code: {}, {} ({})", primary, extended, code);
+	// }
+
 	match primary {
 		ffi::SQLITE_OK => Ok(()),
-		ffi::SQLITE_ERROR => {
-			println!("code: {}", code);
-			Err(SqliteError::Unknown)
-		},
+		ffi::SQLITE_ERROR => Err(SqliteError::Unknown),
 		ffi::SQLITE_INTERNAL => Err(SqliteError::Internal),
 		ffi::SQLITE_PERM => Err(SqliteError::Perm),
 		ffi::SQLITE_ABORT => Err(SqliteError::Abort),
