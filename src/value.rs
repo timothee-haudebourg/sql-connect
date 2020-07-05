@@ -54,3 +54,21 @@ impl<'a> From<&'a str> for Value<'a> {
 		Value::Text(Mown::Borrowed(str))
 	}
 }
+
+impl<'a> From<chrono::NaiveDate> for Value<'a> {
+	fn from(date: chrono::NaiveDate) -> Value<'a> {
+		Value::Text(Mown::Owned(date.format("%Y-%m-%d")))
+	}
+}
+
+impl<'a> From<chrono::NaiveTime> for Value<'a> {
+	fn from(date: chrono::NaiveDateTime) -> Value<'a> {
+		Value::Text(Mown::Owned(date.format("%H:%M:%S%.f")))
+	}
+}
+
+impl<'a> From<chrono::NaiveDateTime> for Value<'a> {
+	fn from(date: chrono::NaiveDateTime) -> Value<'a> {
+		Value::Text(Mown::Owned(date.format("%+")))
+	}
+}

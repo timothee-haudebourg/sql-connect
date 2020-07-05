@@ -15,5 +15,7 @@ futures-timer = "3.0"
 pin-utils = "*"
 mown = "*"
 
+chrono = "*"
+
 [dev-dependencies]
 async-std = { version = "*", features = ["attributes"] }
