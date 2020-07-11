@@ -57,18 +57,18 @@ impl<'a> From<&'a str> for Value<'a> {
 
 impl<'a> From<chrono::NaiveDate> for Value<'a> {
 	fn from(date: chrono::NaiveDate) -> Value<'a> {
-		Value::Text(Mown::Owned(date.format("%Y-%m-%d")))
+		Value::Text(Mown::Owned(date.format("%Y-%m-%d").to_string()))
 	}
 }
 
 impl<'a> From<chrono::NaiveTime> for Value<'a> {
-	fn from(date: chrono::NaiveDateTime) -> Value<'a> {
-		Value::Text(Mown::Owned(date.format("%H:%M:%S%.f")))
+	fn from(date: chrono::NaiveTime) -> Value<'a> {
+		Value::Text(Mown::Owned(date.format("%H:%M:%S%.f").to_string()))
 	}
 }
 
 impl<'a> From<chrono::NaiveDateTime> for Value<'a> {
 	fn from(date: chrono::NaiveDateTime) -> Value<'a> {
-		Value::Text(Mown::Owned(date.format("%+")))
+		Value::Text(Mown::Owned(date.format("%+").to_string()))
 	}
 }
