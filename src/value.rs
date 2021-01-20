@@ -27,6 +27,60 @@ impl FromValue for usize {
 	}
 }
 
+impl FromValue for u32 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Integer(i) if i >= 0 => i as u32,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for i32 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Integer(i) => i as i32,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for u64 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Integer(i) if i >= 0 => i as u64,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for i64 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Integer(i) => i as i64,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for f32 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Float(f) => f as f32,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for f64 {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Float(f) => f,
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
 impl FromValue for String {
 	fn from<'a>(value: Value<'a>) -> Self {
 		match value {
@@ -37,8 +91,68 @@ impl FromValue for String {
 	}
 }
 
+impl FromValue for chrono::NaiveDate {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Text(str) => chrono::NaiveDate::parse_from_str(&str, "%Y-%m-%d").unwrap(),
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for chrono::NaiveTime {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Text(str) => chrono::NaiveTime::parse_from_str(&str, "%H:%M:%S%.f").unwrap(),
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl FromValue for chrono::NaiveDateTime {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Text(str) => chrono::NaiveDateTime::parse_from_str(&str, "%+").unwrap(),
+			_ => panic!("invalid convertion")
+		}
+	}
+}
+
+impl<T: FromValue> FromValue for Option<T> {
+	fn from<'a>(value: Value<'a>) -> Self {
+		match value {
+			Value::Null => None,
+			some => Some(T::from(some))
+		}
+	}
+}
+
 impl<'a> From<usize> for Value<'a> {
 	fn from(i: usize) -> Value<'a> {
+		Value::Integer(i as i64)
+	}
+}
+
+impl<'a> From<u64> for Value<'a> {
+	fn from(i: u64) -> Value<'a> {
+		Value::Integer(i as i64)
+	}
+}
+
+impl<'a> From<i64> for Value<'a> {
+	fn from(i: i64) -> Value<'a> {
+		Value::Integer(i)
+	}
+}
+
+impl<'a> From<u32> for Value<'a> {
+	fn from(i: u32) -> Value<'a> {
+		Value::Integer(i as i64)
+	}
+}
+
+impl<'a> From<i32> for Value<'a> {
+	fn from(i: i32) -> Value<'a> {
 		Value::Integer(i as i64)
 	}
 }
